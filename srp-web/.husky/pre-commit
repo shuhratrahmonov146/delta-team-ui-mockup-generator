@@ -1,0 +1,106 @@
+#!/bin/bash
+
+# ─────────────────────────────────────────────
+# Fast pre-commit checks (lighter than full CI)
+# Includes branch protection confirmation
+# ─────────────────────────────────────────────
+
+set -e
+
+# ANSI colors
+RED=$'\033[31m'
+GREEN=$'\033[32m'
+YELLOW=$'\033[33m'
+BLUE=$'\033[34m'
+MAGENTA=$'\033[35m'
+CYAN=$'\033[36m'
+RESET=$'\033[0m'
+
+BRANCH="$(git symbolic-ref --short HEAD)"
+
+# ─────────────────────────────────────────────
+# List of restricted branches
+# ─────────────────────────────────────────────
+RESTRICTED_BRANCHES=("main" "develop")
+
+# ─────────────────────────────────────────────
+# Check if current branch is restricted
+# ─────────────────────────────────────────────
+for protected in "${RESTRICTED_BRANCHES[@]}"; do
+  if [ "$BRANCH" = "$protected" ]; then
+    echo
+    printf "${RED}|----------------------------|\n${RESET}"
+    printf "${RED}|   STOP! PROTECTED BRANCH   |\n${RESET}"
+    printf "${RED}|----------------------------|\n${RESET}"
+    echo
+    printf "${YELLOW}Warning: committing to '%s' is restricted. Approval needed.\n\n${RESET}" "$BRANCH"
+
+    # Skip prompt if override variable is set (useful for CI)
+    if [ "$SKIP_HOOK_CONFIRM" = "true" ]; then
+      printf "${CYAN}Override enabled → skipping confirmation${RESET}\n"
+      break
+    fi
+
+    # Prompt for confirmation
+    if [ -e /dev/tty ]; then
+        read -p $'\033[35mType "yes" if confirmed, anything else to cancel: \033[0m' answer < /dev/tty
+        if [ "$answer" != "yes" ]; then
+            echo
+            printf "${RED}|----------------------------|\n"
+            printf "|      COMMIT CANCELLED      |\n"
+            printf "|----------------------------|\n${RESET}"
+            echo
+            exit 1
+        fi
+    else
+        printf "${RED}Cannot ask for confirmation in non-interactive mode.\n"
+        printf "Use a feature branch or run with interactive terminal.${RESET}\n"
+        exit 1
+    fi
+  fi
+done
+
+printf "${BLUE}--- Running pre-commit checks on branch: %s ---\n${RESET}" "$BRANCH"
+echo
+
+# ─────────────────────────────────────────────
+# Linting
+# ─────────────────────────────────────────────
+printf "${CYAN}→ Checking code quality (lint)...\n${RESET}"
+npm run lint || {
+    printf "${RED}Linting failed!\nFix with: npm run lint:fix${RESET}\n"
+    exit 1
+}
+
+# ─────────────────────────────────────────────
+# Formatting
+# ─────────────────────────────────────────────
+printf "${CYAN}→ Checking formatting (prettier)...\n${RESET}"
+npx prettier --check "**/*.{ts,tsx,js,jsx,json,md}" || {
+    printf "${RED}Formatting issues found!\nFix with: npm run format${RESET}\n"
+    exit 1
+}
+
+# ─────────────────────────────────────────────
+# Type checking
+# ─────────────────────────────────────────────
+printf "${CYAN}→ Type checking...\n${RESET}"
+npm run type-check || {
+    printf "${RED}Type errors found!${RESET}\n"
+    exit 1
+}
+
+# ─────────────────────────────────────────────
+# Security audit
+# ─────────────────────────────────────────────
+printf "${CYAN}→ Checking for vulnerabilities...\n${RESET}"
+npm audit || {
+    printf "${RED}Security vulnerabilities found!${RESET}\n"
+    exit 1
+}
+
+echo
+printf "${GREEN}|----------------------------|\n"
+printf "|      PRE-COMMIT PASSED     |\n"
+printf "|----------------------------|\n${RESET}"
+echo

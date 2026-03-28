@@ -1,0 +1,44 @@
+{
+  "name": "srp-web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "lint:fix": "eslint --fix .",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "type-check": "tsc --noEmit",
+    "prepare": "husky",
+    "pre-commit": "bash ./src/scripts/pre-commit-ci.sh"
+  },
+  "dependencies": {
+    "@next/third-parties": "^16.1.6",
+    "clsx": "^2.1.1",
+    "googleapis": "^170.1.0",
+    "lucide-react": "^0.562.0",
+    "next": "^16.1.6",
+    "nodemailer": "^7.0.13",
+    "react": "^19",
+    "react-dom": "^19",
+    "react-world-flags": "^1.6.0",
+    "swiper": "^12.0.3",
+    "tailwind-merge": "^3.4.0"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.3.3",
+    "@types/node": "^20",
+    "@types/nodemailer": "^7.0.9",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "^15",
+    "husky": "^9.1.7",
+    "postcss": "^8",
+    "prettier": "^3.7.4",
+    "tailwindcss": "^3.4.1",
+    "typescript": "^5"
+  }
+}
