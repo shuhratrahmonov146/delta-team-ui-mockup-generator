@@ -334,7 +334,7 @@ function ChatApp() {
           role: 'bot',
           text: type === 'UI' 
             ? "Your visual design is ready! I've also sent a secure link to your email so you can review it anytime. **What do you think of the design?** [BUTTONS: [\"Looks Great\", \"Needs Changes\"]]"
-            : "The technical plan is complete! A copy has been sent to your email for your records. **Shall we review the plan together?** [BUTTONS: [\"Review Plan\", \"Next Steps\"]]",
+            : "The technical plan is complete! A copy has been sent to your email for your records. **What do you think of the plan?** [BUTTONS: [\"Next Steps\", \"Needs Changes\"]]",
           timestamp: new Date(),
         };
 

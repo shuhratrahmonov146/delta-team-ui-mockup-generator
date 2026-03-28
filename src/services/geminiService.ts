@@ -44,73 +44,108 @@ INTERACTIVE BUTTONS:
 If you ask a choice-based question, append [BUTTONS: ["Option 1", "Option 2"]] at the end.
 `;
 
+function isQuotaError(error: any) {
+  const message = error?.message?.toLowerCase() || '';
+  const status = error?.status || error?.error?.status || '';
+  const code = error?.code || error?.error?.code || 0;
+  
+  return (
+    message.includes('429') || 
+    message.includes('quota') ||
+    status === 'RESOURCE_EXHAUSTED' ||
+    code === 429
+  );
+}
+
 export async function getChatResponse(message: string, history: any[]) {
-  try {
-    const aiClient = getAI();
-    const contents = history.map((msg: any) => ({
-      role: msg.role === 'user' ? 'user' : 'model',
-      parts: [{ text: msg.text }]
-    }));
+  const models = ["gemini-3-flash-preview", "gemini-3.1-flash-lite-preview"];
+  let lastError: any = null;
 
-    contents.push({
-      role: 'user',
-      parts: [{ text: message }]
-    });
+  for (const model of models) {
+    try {
+      const aiClient = getAI();
+      const contents = history.map((msg: any) => ({
+        role: msg.role === 'user' ? 'user' : 'model',
+        parts: [{ text: msg.text }]
+      }));
 
-    const response = await aiClient.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents,
-      config: {
-        systemInstruction: SYSTEM_INSTRUCTION,
+      contents.push({
+        role: 'user',
+        parts: [{ text: message }]
+      });
+
+      const response = await aiClient.models.generateContent({
+        model,
+        contents,
+        config: {
+          systemInstruction: SYSTEM_INSTRUCTION,
+        }
+      });
+
+      return response.text;
+    } catch (error: any) {
+      console.error(`Gemini error with model ${model}:`, error);
+      lastError = error;
+      if (isQuotaError(error)) {
+        continue; // Try next model
       }
-    });
-
-    return response.text;
-  } catch (error: any) {
-    console.error('Gemini error:', error);
-    if (error?.message?.includes('429') || error?.status === 'RESOURCE_EXHAUSTED') {
-      throw new Error("QUOTA_EXCEEDED: I've reached my daily limit for conversations. Please try again later or check your API key.");
+      break; // Non-quota error, don't retry
     }
-    throw new Error("Failed to generate response");
   }
+
+  if (isQuotaError(lastError)) {
+    throw new Error("QUOTA_EXCEEDED: I've reached my daily limit for conversations. Please try again later or check your API key.");
+  }
+  throw new Error("Failed to generate response");
 }
 
 export async function generatePrototype(summary: string, type: 'UI' | 'TECH') {
-  try {
-    const aiClient = getAI();
-    const systemInstruction = type === 'TECH'
-      ? `You are an expert technical architect. Generate a structured Technical Requirement Specification (TRS) for the project described. Use clean HTML/Tailwind. Include sections: Data Flow, API Endpoints, Logic, and Edge Cases. Use a professional, clean technical document style. Return ONLY the full HTML.`
-      : `You are a world-class UI/UX designer. Generate a high-fidelity, visually stunning UI mockup for the project described. 
-         Focus on professional visual design, layout, typography, and a color palette that fits the project's industry and target audience. 
-         CRITICAL: This is a MOCKUP, not a functional app. Prioritize aesthetic excellence and clear visual hierarchy.
-         Do NOT generate a chatbot or a "meta" app. Generate the ACTUAL interface for the end user. 
-         Use Tailwind CSS, Lucide Icons.
-         IMAGES: Use high-quality, relevant images. 
-         - Use https://picsum.photos/seed/{keyword}/{width}/{height} for placeholders.
-         - MANDATORY: Every <img> tag MUST include referrerPolicy="no-referrer".
-         Include 3-4 key screens in a single scrollable page, presented as a high-end design showcase. Return ONLY the full HTML.`;
+  const models = ["gemini-3.1-pro-preview", "gemini-3-flash-preview", "gemini-3.1-flash-lite-preview"];
+  let lastError: any = null;
 
-    const response = await aiClient.models.generateContent({
-      model: "gemini-3.1-pro-preview",
-      contents: [{ parts: [{ text: `Project Summary: "${summary}"` }] }],
-      config: {
-        systemInstruction,
-        temperature: 0.7,
+  const systemInstruction = type === 'TECH'
+    ? `You are an expert technical architect. Generate a structured Technical Requirement Specification (TRS) for the project described. Use clean HTML/Tailwind. Include sections: Data Flow, API Endpoints, Logic, and Edge Cases. Use a professional, clean technical document style. Return ONLY the full HTML.`
+    : `You are a world-class UI/UX designer. Generate a high-fidelity, visually stunning UI mockup for the project described. 
+       Focus on professional visual design, layout, typography, and a color palette that fits the project's industry and target audience. 
+       CRITICAL: This is a MOCKUP, not a functional app. Prioritize aesthetic excellence and clear visual hierarchy.
+       Do NOT generate a chatbot or a "meta" app. Generate the ACTUAL interface for the end user. 
+       Use Tailwind CSS, Lucide Icons.
+       IMAGES: Use high-quality, relevant images. 
+       - Use https://picsum.photos/seed/{keyword}/{width}/{height} for placeholders.
+       - MANDATORY: Every <img> tag MUST include referrerPolicy="no-referrer".
+       Include 3-4 key screens in a single scrollable page, presented as a high-end design showcase. Return ONLY the full HTML.`;
+
+  for (const model of models) {
+    try {
+      const aiClient = getAI();
+      const response = await aiClient.models.generateContent({
+        model,
+        contents: [{ parts: [{ text: `Project Summary: "${summary}"` }] }],
+        config: {
+          systemInstruction,
+          temperature: 0.7,
+        }
+      });
+
+      let html = response.text;
+      const match = html.match(/```html\n([\s\S]*?)\n```/) || html.match(/<html>[\s\S]*?<\/html>/i);
+      if (match) {
+        html = match[1] || match[0];
       }
-    });
 
-    let html = response.text;
-    const match = html.match(/```html\n([\s\S]*?)\n```/) || html.match(/<html>[\s\S]*?<\/html>/i);
-    if (match) {
-      html = match[1] || match[0];
+      return html;
+    } catch (error: any) {
+      console.error(`Mockup generation error with model ${model}:`, error);
+      lastError = error;
+      if (isQuotaError(error)) {
+        continue; // Try next model
+      }
+      break; // Non-quota error, don't retry
     }
-
-    return html;
-  } catch (error: any) {
-    console.error('Mockup generation error:', error);
-    if (error?.message?.includes('429') || error?.status === 'RESOURCE_EXHAUSTED') {
-      throw new Error("QUOTA_EXCEEDED: I've reached my daily limit for generating designs. Please try again later or check your API key.");
-    }
-    throw new Error("Failed to generate mockup");
   }
+
+  if (isQuotaError(lastError)) {
+    throw new Error("QUOTA_EXCEEDED: I've reached my daily limit for generating designs. Please try again later or check your API key.");
+  }
+  throw new Error("Failed to generate mockup");
 }
