@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Send, Sparkles, CheckCircle, ChevronRight, User, Bot, Loader2, Maximize2, RefreshCw, Smartphone, Monitor, Layout, Plus, History, Share2, Mail, Check, X, ExternalLink } from 'lucide-react';
 import { getChatResponse, generatePrototype } from './services/geminiService';
-import { db, auth } from './firebase';
+import { db } from './firebase';
 import { collection, addDoc, serverTimestamp, doc, setDoc, getDocs, query, orderBy, limit, getDoc } from 'firebase/firestore';
 import ErrorBoundary from './components/ErrorBoundary';
 
@@ -37,19 +37,6 @@ interface GenerationStep {
 function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
   const errInfo = {
     error: error instanceof Error ? error.message : String(error),
-    authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
-      emailVerified: auth.currentUser?.emailVerified,
-      isAnonymous: auth.currentUser?.isAnonymous,
-      tenantId: auth.currentUser?.tenantId,
-      providerInfo: auth.currentUser?.providerData.map(provider => ({
-        providerId: provider.providerId,
-        displayName: provider.displayName,
-        email: provider.email,
-        photoUrl: provider.photoURL
-      })) || []
-    },
     operationType,
     path
   };
@@ -100,35 +87,9 @@ function ChatApp() {
     }
   }, [input]);
 
-  const [user, setUser] = useState<any>(null);
-
   useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged((u) => {
-      setUser(u);
-      if (u) {
-        fetchHistory();
-      }
-    });
-    return () => unsubscribe();
+    fetchHistory();
   }, []);
-
-  const handleLogin = async () => {
-    const { signInWithPopup, GoogleAuthProvider } = await import('firebase/auth');
-    try {
-      await signInWithPopup(auth, new GoogleAuthProvider());
-    } catch (error) {
-      console.error('Login failed', error);
-    }
-  };
-
-  const handleLogout = async () => {
-    try {
-      await auth.signOut();
-      setConversations([]);
-    } catch (error) {
-      console.error('Logout failed', error);
-    }
-  };
 
   const fetchHistory = async () => {
     const path = 'conversations';
@@ -170,9 +131,7 @@ function ChatApp() {
       }
     };
     createInitialLead();
-    if (auth.currentUser) {
-      fetchHistory();
-    }
+    fetchHistory();
   }, []);
 
   const createNewChat = async () => {
@@ -494,7 +453,7 @@ function ChatApp() {
                   <div className="flex flex-col items-center justify-center h-full text-center p-8 opacity-40">
                     <History className="w-12 h-12 mb-4" />
                     <p className="text-xs font-bold uppercase tracking-widest leading-relaxed">
-                      {user ? "No conversations found" : "Login as Admin to see history"}
+                      No conversations found
                     </p>
                   </div>
                 )}
