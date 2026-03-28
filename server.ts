@@ -15,7 +15,7 @@ const prototypes = new Map<string, string>();
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = 3001;
 
   app.use(express.json());
 
