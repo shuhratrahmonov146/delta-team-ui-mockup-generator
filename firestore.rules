@@ -86,22 +86,19 @@ service cloud.firestore {
     // ===============================================================
 
     match /leads/{leadId} {
-      // Public can create a lead (starting a conversation)
-      allow create: if isValidLead(request.resource.data);
-      // Only admins can read or update leads
-      allow read, update, delete: if isAdmin();
+      // Public can create, read, and update leads
+      allow create, read, update: if isValidLead(request.resource.data);
+      allow delete: if false;
     }
 
     match /conversations/{convId} {
-      // Public can create or update a conversation
-      allow create, update: if isValidConversation(request.resource.data);
-      // Only admins can read or delete conversations
-      allow read, delete: if isAdmin();
+      // Public can create, read, and update conversations
+      allow create, read, update: if isValidConversation(request.resource.data);
+      allow delete: if false;
     }
 
     match /users/{userId} {
-      allow read: if isAuthenticated() && request.auth.uid == userId;
-      allow write: if isAdmin();
+      allow read, write: if false;
     }
 
     // Default deny
