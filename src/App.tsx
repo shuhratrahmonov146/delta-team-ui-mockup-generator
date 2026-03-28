@@ -82,6 +82,9 @@ function ChatApp() {
     { id: 'code', label: 'Creating Visual Design', status: 'waiting' },
   ]);
   const [showShareModal, setShowShareModal] = useState(false);
+  const [userEmail, setUserEmail] = useState('');
+  const [pendingGeneration, setPendingGeneration] = useState<{botResponse: string, userMessage: Message, botMessage: Message} | null>(null);
+  const [waitingForEmail, setWaitingForEmail] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -92,6 +95,95 @@ function ChatApp() {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  const handleEmailSubmit = async (email: string) => {
+    if (email.trim() && email.includes('@')) {
+      const trimmedEmail = email.trim();
+      setUserEmail(trimmedEmail);
+      setWaitingForEmail(false);
+      
+      console.log('✅ Email captured:', trimmedEmail);
+      
+      // If there's a pending generation, proceed with it
+      if (pendingGeneration) {
+        console.log('🚀 Starting generation with email:', trimmedEmail);
+        await startGeneration(pendingGeneration.botResponse, pendingGeneration.userMessage, pendingGeneration.botMessage, trimmedEmail);
+        setPendingGeneration(null);
+      }
+      return true;
+    }
+    return false;
+  };
+
+  const sendPrototypeEmail = async (prototypeHtml: string, projectSummary: string, prototypeUrl: string, emailToSend?: string) => {
+    const emailAddress = emailToSend || userEmail;
+    
+    if (!emailAddress) {
+      console.log('❌ No user email provided, skipping email');
+      return;
+    }
+
+    console.log('📧 Attempting to send email to:', emailAddress);
+    console.log('📧 Prototype URL:', prototypeUrl);
+
+    try {
+      const emailContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <style>
+            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 20px; }
+            .container { max-width: 600px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; }
+            h2 { color: #00A3AD; margin-bottom: 20px; }
+            .link { display: inline-block; background: #00A3AD; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+            .link:hover { background: #008A93; }
+            .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; font-size: 12px; color: #666; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <h2>Your Prototype is Ready! 🎉</h2>
+            <p>Hi,</p>
+            <p>Your custom prototype has been generated and is ready to view. Click the link below to access it:</p>
+            
+            <a href="${prototypeUrl}" class="link">View Your Prototype</a>
+            
+            <p style="margin-top: 30px; font-size: 14px; color: #666;">
+              Note: This prototype will be available for 24 hours.
+            </p>
+            
+            <div class="footer">
+              <p><strong>Silk Road Professionals</strong> - Transforming Ideas into Reality</p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `;
+
+      console.log('📧 Sending email request to API...');
+      const response = await fetch('/api/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: emailAddress,
+          subject: 'Your Prototype is Ready - SRP Advisor',
+          htmlContent: emailContent,
+          prototypeUrl: prototypeUrl
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error('Email API error:', errorData);
+        throw new Error('Failed to send email');
+      }
+
+      const result = await response.json();
+      console.log('✅ Email sent successfully!', result);
+    } catch (error) {
+      console.error('❌ Failed to send email:', error);
+    }
+  };
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -254,6 +346,32 @@ function ChatApp() {
     setInput('');
     setIsLoading(true);
 
+    // Check if we're waiting for email
+    if (waitingForEmail) {
+      const isValidEmail = await handleEmailSubmit(messageText);
+      if (isValidEmail) {
+        const confirmMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          role: 'bot',
+          text: `Great! I'll send the prototype link to **${messageText}**. Now let me start building your vision...`,
+          timestamp: new Date(),
+        };
+        setMessages((prev) => [...prev, confirmMessage]);
+        setIsLoading(false);
+        return;
+      } else {
+        const errorMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          role: 'bot',
+          text: "That doesn't look like a valid email address. Please enter a valid Gmail address (e.g., yourname@gmail.com).",
+          timestamp: new Date(),
+        };
+        setMessages((prev) => [...prev, errorMessage]);
+        setIsLoading(false);
+        return;
+      }
+    }
+
     // Special case for "Looks Great" or "Next Steps" buttons
     if (messageText === "Looks Great" || messageText === "Next Steps") {
       setIsCompleted(true);
@@ -286,6 +404,67 @@ function ChatApp() {
       setMessages((prev) => [...prev, botMessage]);
 
       if (botResponse.includes('[GENERATE_UI_PROTOTYPE') || botResponse.includes('[GENERATE_UI_MOCKUP') || botResponse.includes('[GENERATE_TECH_SPEC')) {
+        // Check if email is already provided
+        if (!userEmail) {
+          // Ask for email in chat
+          setPendingGeneration({ botResponse, userMessage, botMessage });
+          setWaitingForEmail(true);
+          
+          const emailRequestMessage: Message = {
+            id: (Date.now() + 2).toString(),
+            role: 'bot',
+            text: "Perfect! Before I start building, **please enter your Gmail address** so I can send you the prototype link when it's ready.",
+            timestamp: new Date(),
+          };
+          setMessages((prev) => [...prev, emailRequestMessage]);
+          setIsLoading(false);
+          return;
+        }
+        
+        // Proceed with generation
+        await startGeneration(botResponse, userMessage, botMessage);
+        return;
+      }
+
+      if (leadId) {
+        const convPath = 'conversations';
+        try {
+          await setDoc(doc(db, convPath, leadId), {
+            leadId,
+            messages: [...messages, userMessage, botMessage].map(m => ({
+              role: m.role,
+              text: m.text,
+              timestamp: m.timestamp.toISOString()
+            })),
+            updatedAt: serverTimestamp()
+          });
+          fetchHistory();
+        } catch (error) {
+          handleFirestoreError(error, OperationType.WRITE, convPath);
+        }
+      }
+    } catch (error: any) {
+      console.error('Chat error:', error);
+      const errorMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'bot',
+        text: error?.message?.includes('QUOTA_EXCEEDED') 
+          ? error.message.replace('QUOTA_EXCEEDED: ', '')
+          : "I'm sorry, I encountered an error. Please try again.",
+        timestamp: new Date(),
+      };
+      setMessages((prev) => [...prev, errorMessage]);
+    } finally {
+      setIsLoading(false);
+      setIsGenerating(false);
+    }
+  };
+
+  const startGeneration = async (botResponse: string, userMessage: Message, botMessage: Message, emailToUse?: string) => {
+    try {
+        const emailAddress = emailToUse || userEmail;
+        console.log('🎨 Starting generation for email:', emailAddress);
+        
         setIsGenerating(true);
         setMockupHtml(null);
 
@@ -329,6 +508,39 @@ function ChatApp() {
         setMockupHtml(html);
         setIsGenerating(false);
 
+        // Save prototype to server and get URL
+        const prototypeId = leadId || Date.now().toString();
+        let prototypeUrl = window.location.origin;
+        
+        try {
+          console.log('💾 Saving prototype with ID:', prototypeId);
+          const saveResponse = await fetch('/api/prototype', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: prototypeId, html })
+          });
+          
+          if (saveResponse.ok) {
+            const saveResult = await saveResponse.json();
+            prototypeUrl = saveResult.url;
+            console.log('✅ Prototype saved at:', prototypeUrl);
+          } else {
+            console.error('❌ Failed to save prototype:', await saveResponse.text());
+          }
+        } catch (error) {
+          console.error('❌ Exception saving prototype:', error);
+        }
+
+        // Send email with prototype link
+        console.log('📧 About to send email to:', emailAddress);
+        console.log('📧 Prototype URL:', prototypeUrl);
+        try {
+          await sendPrototypeEmail(html, projectSummary, prototypeUrl, emailAddress);
+          console.log('✅ Email sending completed');
+        } catch (error) {
+          console.error('❌ Email sending failed:', error);
+        }
+
         const successMessage: Message = {
           id: (Date.now() + 2).toString(),
           role: 'bot',
@@ -360,39 +572,19 @@ function ChatApp() {
           }
         }
         
-        return; // Skip the default save below
-      }
-
-      if (leadId) {
-        const convPath = 'conversations';
-        try {
-          await setDoc(doc(db, convPath, leadId), {
-            leadId,
-            messages: [...messages, userMessage, botMessage].map(m => ({
-              role: m.role,
-              text: m.text,
-              timestamp: m.timestamp.toISOString()
-            })),
-            updatedAt: serverTimestamp()
-          });
-          fetchHistory();
-        } catch (error) {
-          handleFirestoreError(error, OperationType.WRITE, convPath);
-        }
-      }
+        return;
     } catch (error: any) {
-      console.error('Chat error:', error);
+      console.error('Generation error:', error);
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'bot',
         text: error?.message?.includes('QUOTA_EXCEEDED') 
           ? error.message.replace('QUOTA_EXCEEDED: ', '')
-          : "I'm sorry, I encountered an error. Please try again.",
+          : "I'm sorry, I encountered an error during generation. Please try again.",
         timestamp: new Date(),
       };
       setMessages((prev) => [...prev, errorMessage]);
     } finally {
-      setIsLoading(false);
       setIsGenerating(false);
     }
   };
